@@ -9,8 +9,31 @@ from navv.validators import is_ipv4_address, is_ipv6_address
 MAC_VENDORS_JSON_FILE = os.path.abspath(__file__ + "/../" + "data/mac-vendors.json")
 
 
-def get_zeek_df(zeek_data: list, dns_data: dict):
+def get_zeek_df(zeek_data, dns_data: dict):
     """Return a pandas dataframe of the conn.log data with its dns data."""
+    if not isinstance(zeek_data, list):
+        def generate_rows():
+            for row in zeek_data:
+                split_row = row.split("\t")
+                if len(split_row) >= 3:
+                    split_row.insert(1, dns_data.get(split_row[0], ""))
+                    split_row.insert(3, dns_data.get(split_row[2], ""))
+                yield split_row
+        return pd.DataFrame(
+            generate_rows(),
+            columns=[
+                "src_ip",
+                "src_hostname",
+                "dst_ip",
+                "dst_hostname",
+                "port",
+                "proto",
+                "conn",
+                "src_mac",
+                "dst_mac",
+            ],
+        )
+
     zeek_data = [row.split("\t") for row in zeek_data]
     # Insert dns data to zeek data
     for row in zeek_data:
@@ -35,8 +58,21 @@ def get_zeek_df(zeek_data: list, dns_data: dict):
 
 
 @timeit
-def get_snmp_df(zeek_data: list):
+def get_snmp_df(zeek_data):
     """Return a pandas dataframe of the snmp.log data."""
+    if not isinstance(zeek_data, list):
+        rows = (row.split("\t") for row in zeek_data)
+        return pd.DataFrame(
+            rows,
+            columns=[
+                "src_ip",
+                "src_port",
+                "dst_ip",
+                "dst_port",
+                "version",
+                "community",
+            ],
+        )
     zeek_data = [row.split("\t") for row in zeek_data]
     return pd.DataFrame(
         zeek_data,
@@ -97,8 +133,22 @@ def get_mac_df(zeek_df: pd.DataFrame):
 
 
 @timeit
-def get_http_df(zeek_data: list):
+def get_http_df(zeek_data):
     """Return a pandas dataframe of the http.log data."""
+    if not isinstance(zeek_data, list):
+        rows = (row.split("\t") for row in zeek_data)
+        return pd.DataFrame(
+            rows,
+            columns=[
+                "src_ip",
+                "dst_ip",
+                "dst_port",
+                "method",
+                "host",
+                "uri",
+                "user_agent",
+            ],
+        )
     zeek_data = [row.split("\t") for row in zeek_data]
     return pd.DataFrame(
         zeek_data,
@@ -115,8 +165,23 @@ def get_http_df(zeek_data: list):
 
 
 @timeit
-def get_ssl_df(zeek_data: list):
+def get_ssl_df(zeek_data):
     """Return a pandas dataframe of the ssl.log data."""
+    if not isinstance(zeek_data, list):
+        rows = (row.split("\t") for row in zeek_data)
+        return pd.DataFrame(
+            rows,
+            columns=[
+                "src_ip",
+                "dst_ip",
+                "dst_port",
+                "version",
+                "cipher",
+                "curve",
+                "server_name",
+                "resumed",
+            ],
+        )
     zeek_data = [row.split("\t") for row in zeek_data]
     return pd.DataFrame(
         zeek_data,
@@ -134,7 +199,10 @@ def get_ssl_df(zeek_data: list):
 
 
 @timeit
-def get_generic_df(zeek_data: list, columns: list):
+def get_generic_df(zeek_data, columns: list):
     """Return a pandas dataframe for generic logs."""
+    if not isinstance(zeek_data, list):
+        rows = (row.split("\t") for row in zeek_data)
+        return pd.DataFrame(rows, columns=columns)
     zeek_data = [row.split("\t") for row in zeek_data]
     return pd.DataFrame(zeek_data, columns=columns)

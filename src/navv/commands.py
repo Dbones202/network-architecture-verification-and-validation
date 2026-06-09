@@ -91,8 +91,14 @@ from navv.elevadr import generate_elevadr_report
     help="Path to GeoLite2 database file or directory (MMDB format). If not specified, DB-IP Lite databases will be automatically downloaded and cached.",
     type=str,
 )
+@click.option(
+    "--lowmemory",
+    "--low-memory",
+    is_flag=True,
+    help="Enable memory-optimized streaming to reduce RAM usage.",
+)
 @click.argument("customer_name")
-def generate(customer_name, output_dir, pcap, zeek_logs, geoip_db):
+def generate(customer_name, output_dir, pcap, zeek_logs, geoip_db, lowmemory):
     """Generate excel sheet."""
     if not shutil.which("zeek"):
         msg = "Zeek is not installed or not found in PATH. Please install Zeek to use NAVV."
@@ -132,12 +138,12 @@ def generate(customer_name, output_dir, pcap, zeek_logs, geoip_db):
         timer_data["run_zeek"] = "NOT RAN"
 
     # Get zeek data from conn.log, dns.log and snmp.log
-    zeek_data = get_conn_data(zeek_logs)
-    snmp_data = get_snmp_data(zeek_logs)
-    dns_filtered = get_dns_data(customer_name, output_dir, zeek_logs)
+    zeek_data = get_conn_data(zeek_logs, stream=lowmemory)
+    snmp_data = get_snmp_data(zeek_logs, stream=lowmemory)
+    dns_filtered = get_dns_data(customer_name, output_dir, zeek_logs, stream=lowmemory)
     dhcp_data = get_dhcp_data(zeek_logs)
-    http_data = get_http_data(zeek_logs)
-    ssl_data = get_ssl_data(zeek_logs)
+    http_data = get_http_data(zeek_logs, stream=lowmemory)
+    ssl_data = get_ssl_data(zeek_logs, stream=lowmemory)
     
     # Merge dhcp hostnames into dns dictionary
     for ip, hostname in dhcp_data.items():
@@ -181,9 +187,14 @@ def generate(customer_name, output_dir, pcap, zeek_logs, geoip_db):
     }
     
     for sheet_name, (log_name, fields) in extra_logs.items():
-        log_data = get_log_data(zeek_logs, log_name, fields)
-        if log_data and len(log_data) > 0 and log_data[0] != "":
-            zeek_dfs[sheet_name] = get_generic_df(log_data, fields)
+        log_data = get_log_data(zeek_logs, log_name, fields, stream=lowmemory)
+        if lowmemory:
+            df = get_generic_df(log_data, fields)
+            if not df.empty:
+                zeek_dfs[sheet_name] = df
+        else:
+            if log_data and len(log_data) > 0 and log_data[0] != "":
+                zeek_dfs[sheet_name] = get_generic_df(log_data, fields)
 
     # Get mac dataframe
     mac_df = get_mac_df(zeek_df)
@@ -220,6 +231,11 @@ def generate(customer_name, output_dir, pcap, zeek_logs, geoip_db):
         ip_to_mac_label[ip] = ", ".join(labels)
 
     # Turn zeekcut data into rows for spreadsheet
+    if lowmemory:
+        zeek_data = (
+            f"{row.src_ip}\t{row.dst_ip}\t{row.port}\t{row.proto}\t{row.conn}"
+            for row in zeek_df.itertuples(index=False)
+        )
     rows = create_analysis_array(zeek_data, timer=timer_data)
 
     # Auto-discover and recolor segments

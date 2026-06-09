@@ -45,9 +45,20 @@ def trim_dns_data(data):
     import io
     ret_data = {}
     info_msg("Trimming DNS.log data:")
-    # Stream over bytes natively, avoiding massive string allocations
-    for byte_row in tqdm(io.BytesIO(data)):
-        row = byte_row.decode("utf-8").strip()
+    
+    # If data is bytes/bytearray, wrap in BytesIO. Otherwise, it is an iterable of strings (streamed)
+    if isinstance(data, (bytes, bytearray)):
+        stream = io.BytesIO(data)
+        is_bytes = True
+    else:
+        stream = data
+        is_bytes = False
+
+    for row in tqdm(stream):
+        if is_bytes:
+            row = row.decode("utf-8").strip()
+        else:
+            row = row.strip()
         if not row: continue
         line_data = row.split("\t")
         if len(line_data) > 3 and line_data[2] == "1" and line_data[3] == "NOERROR":

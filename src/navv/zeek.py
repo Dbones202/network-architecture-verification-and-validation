@@ -10,8 +10,22 @@ from navv.utilities import pushd, timeit, trim_dns_data
 
 
 @timeit
-def get_conn_data(zeek_logs):
+def get_conn_data(zeek_logs, stream=False):
     """Return a list of Zeek conn.log data."""
+    if stream:
+        return perform_zeekcut(
+            fields=[
+                "id.orig_h",
+                "id.resp_h",
+                "id.resp_p",
+                "proto",
+                "conn_state",
+                "orig_l2_addr",
+                "resp_l2_addr",
+            ],
+            log_file=os.path.join(zeek_logs, "conn.log"),
+            stream=True,
+        )
     return (
         perform_zeekcut(
             fields=[
@@ -31,7 +45,7 @@ def get_conn_data(zeek_logs):
 
 
 @timeit
-def get_dns_data(customer_name, output_dir, zeek_logs):
+def get_dns_data(customer_name, output_dir, zeek_logs, stream=False):
     """Get DNS data from zeek logs or from a json file if it exists"""
     json_path = os.path.join(output_dir, f"{customer_name}_dns_data.json")
     if os.path.exists(json_path):
@@ -44,13 +58,27 @@ def get_dns_data(customer_name, output_dir, zeek_logs):
     dns_data = perform_zeekcut(
         fields=["query", "answers", "qtype", "rcode_name"],
         log_file=os.path.join(zeek_logs, "dns.log"),
+        stream=stream,
     )
     return trim_dns_data(dns_data)
 
 
 @timeit
-def get_snmp_data(zeek_logs):
+def get_snmp_data(zeek_logs, stream=False):
     """Get SNMP data from zeek logs or from a json file if it exists"""
+    if stream:
+        return perform_zeekcut(
+            fields=[
+                "id.orig_h",
+                "id.orig_p",
+                "id.resp_h",
+                "id.resp_p",
+                "version",
+                "community",
+            ],
+            log_file=os.path.join(zeek_logs, "snmp.log"),
+            stream=True,
+        )
     return (
         perform_zeekcut(
             fields=[
@@ -88,8 +116,14 @@ def get_dhcp_data(zeek_logs):
 
 
 @timeit
-def get_http_data(zeek_logs):
+def get_http_data(zeek_logs, stream=False):
     """Return list of HTTP log data."""
+    if stream:
+        return perform_zeekcut(
+            fields=["id.orig_h", "id.resp_h", "id.resp_p", "method", "host", "uri", "user_agent"],
+            log_file=os.path.join(zeek_logs, "http.log"),
+            stream=True,
+        )
     return perform_zeekcut(
         fields=["id.orig_h", "id.resp_h", "id.resp_p", "method", "host", "uri", "user_agent"],
         log_file=os.path.join(zeek_logs, "http.log")
@@ -97,8 +131,14 @@ def get_http_data(zeek_logs):
 
 
 @timeit
-def get_ssl_data(zeek_logs):
+def get_ssl_data(zeek_logs, stream=False):
     """Return list of SSL log data."""
+    if stream:
+        return perform_zeekcut(
+            fields=["id.orig_h", "id.resp_h", "id.resp_p", "version", "cipher", "curve", "server_name", "resumed"],
+            log_file=os.path.join(zeek_logs, "ssl.log"),
+            stream=True,
+        )
     return perform_zeekcut(
         fields=["id.orig_h", "id.resp_h", "id.resp_p", "version", "cipher", "curve", "server_name", "resumed"],
         log_file=os.path.join(zeek_logs, "ssl.log")
@@ -106,8 +146,14 @@ def get_ssl_data(zeek_logs):
 
 
 @timeit
-def get_log_data(zeek_logs, log_name, fields):
+def get_log_data(zeek_logs, log_name, fields, stream=False):
     """Generic log extraction function."""
+    if stream:
+        return perform_zeekcut(
+            fields=fields,
+            log_file=os.path.join(zeek_logs, f"{log_name}.log"),
+            stream=True,
+        )
     return perform_zeekcut(
         fields=fields,
         log_file=os.path.join(zeek_logs, f"{log_name}.log")
@@ -115,16 +161,28 @@ def get_log_data(zeek_logs, log_name, fields):
 
 
 
-def perform_zeekcut(fields, log_file):
+def perform_zeekcut(fields, log_file, stream=False):
     """Perform the call to zeek-cut with the identified fields on the specified log file"""
     try:
-        with open(log_file, "rb") as f:
-            zeekcut = Popen(
-                ["zeek-cut"] + fields, stdin=f, stdout=PIPE, stderr=STDOUT
-            )
-            return zeekcut.communicate()[0]
+        f = open(log_file, "rb")
+        zeekcut = Popen(
+            ["zeek-cut"] + fields, stdin=f, stdout=PIPE, stderr=STDOUT
+        )
+        if stream:
+            def generator():
+                try:
+                    for line in zeekcut.stdout:
+                        yield line.decode("utf-8").strip()
+                finally:
+                    f.close()
+            return generator()
+        else:
+            with f:
+                return zeekcut.communicate()[0]
     except OSError as e:
         # probably "file does not exist"
+        if stream:
+            return iter([])
         return b""
 
 
